@@ -75,7 +75,9 @@ async function connect(): Promise<Connection> {
       async transaction(work) {
         const client = await pool.connect();
         try {
-          await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+          // Writers lock the tenant row before reading it. READ COMMITTED lets a
+          // waiter see the committed workspace after obtaining that lock.
+          await client.query("BEGIN");
           const tx: Connection = {
             query: (sql, params = []) => execute(client, sql, params),
             transaction: async (nested) => nested(tx),
@@ -405,6 +407,8 @@ export async function updateWorkspace(id: string, mutate: (s: Workspace) => Work
   for (let attempt=0;attempt<12;attempt++) {
     try {
       return await db.transaction(async (tx) => {
+        if (isPostgres())
+          await tx.query("SELECT id FROM lf_workspaces WHERE id=$1 FOR UPDATE", [id]);
         const loaded = await readWorkspace(tx,id);
         const before = structuredClone(loaded.workspace);
         const state = mutate(loaded.workspace);
