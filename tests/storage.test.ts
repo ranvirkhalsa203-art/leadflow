@@ -245,3 +245,13 @@ test("account deletion requires the password and removes only that workspace", a
     ),
   );
 });
+
+test("sample invoices with optional fields persist and reload", async () => {
+  const { sampleWorkspace } = await import("../src/lib/seed");
+  const owner = await register({name:"Sample regression",email:"sample-regression@example.com",password:"sample-regression-123",currency:"INR"});
+  const sample = sampleWorkspace();
+  await updateWorkspace(owner.user.workspaceId, () => sample);
+  const saved = await getWorkspace(owner.user.workspaceId);
+  assert.equal(saved.documents.length, sample.documents.length);
+  assert.deepEqual(saved.documents.map(d => d.items), sample.documents.map(d => d.items));
+});

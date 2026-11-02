@@ -108,7 +108,7 @@ async function connect(): Promise<Connection> {
     const execute = async (sql: string, params: unknown[] = []) => {
       const values: unknown[] = [];
       const normalized = sql.replace(/\$(\d+)/g, (_, n) => {
-        values.push(params[Number(n) - 1]);
+        values.push(sqlValue(params[Number(n) - 1]));
         return "?";
       });
       const stmt = db.prepare(normalized);
