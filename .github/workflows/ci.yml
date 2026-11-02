@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches: [main, master, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: leadflow
+          POSTGRES_PASSWORD: leadflow_test
+          POSTGRES_DB: leadflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leadflow -d leadflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          DATABASE_URL: postgres://leadflow:leadflow_test@localhost:5432/leadflow_test
+      - run: npm run build
+        env:
+          DATABASE_URL: postgres://leadflow:leadflow_test@localhost:5432/leadflow_test
+          APP_URL: https://leadflow.example.com
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          CI: true
+          APP_URL: http://127.0.0.1:3000
