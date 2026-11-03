@@ -464,6 +464,15 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
         status: "new",
         createdAt: now,
       });
+      if (!s.isDemo) {
+        const business = s.business.legalName || s.name;
+        const firstName = c.name.split(/\s+/)[0];
+        s.outbox.unshift({
+          id: uid(), to: c.email, subject: `A quick hello from ${business}`,
+          body: `Hi ${firstName},\n\nThanks for connecting with ${business}. We’ve saved your contact details so we can follow up with you personally.\n\nIs there anything you’d like help with, or a time that works best to get in touch? Just reply and let us know.\n\nThanks,\nThe ${business} team`,
+          status: "queued", attempts: 0, createdAt: now,
+        });
+      }
       title = `Added ${c.name}`;
       break;
     case "lead.update": {

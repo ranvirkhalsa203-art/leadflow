@@ -31,7 +31,7 @@ export async function dispatchEmail(workspaceId: string, id: string) {
       "Connect an email provider before sending. Your draft is saved.",
     );
   await rateLimit(`email:${workspaceId}`, 30, 3600000);
-  let payload: { to: string; subject: string; body: string } | undefined;
+  let payload: { to: string; subject: string; body: string; replyTo?: string } | undefined;
   await updateWorkspace(workspaceId, (s) => {
     const m = s.outbox.find((m) => m.id === id);
     if (!m) throw new Error("Email not found");
@@ -55,7 +55,7 @@ export async function dispatchEmail(workspaceId: string, id: string) {
     m.status = "sending";
     m.attempts++;
     m.lastAttempt = new Date().toISOString();
-    payload = { to: m.to, subject: m.subject, body: m.body };
+    payload = { to: m.to, subject: m.subject, body: m.body, replyTo: s.business.email || undefined };
     return s;
   });
   try {
@@ -71,6 +71,7 @@ export async function dispatchEmail(workspaceId: string, id: string) {
         to: [payload!.to],
         subject: payload!.subject,
         text: payload!.body,
+        reply_to: payload!.replyTo,
       }),
       signal: AbortSignal.timeout(15000),
     });

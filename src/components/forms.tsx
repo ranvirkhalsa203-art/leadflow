@@ -496,6 +496,9 @@ export function Editor({
         <div className="editor-body">
           {kind === "lead" && (
             <>
+              {!recordId && !s.isDemo && (
+                <p>Saving this lead automatically queues a welcome email to their contact address.</p>
+              )}
               <Field label="Contact name">
                 <input
                   name="name"

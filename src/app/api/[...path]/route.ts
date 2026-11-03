@@ -201,11 +201,19 @@ async function handler(req: NextRequest) {
     }
     if (path === "command") {
       await rateLimit(`commands:${user.workspaceId}`, 300, 60000);
-      return json({
-        workspace: await updateWorkspace(user.workspaceId, (s) =>
-          applyCommand(s, body),
-        ),
-      });
+      const workspace = await updateWorkspace(user.workspaceId, (s) => applyCommand(s, body));
+      if (body.type !== "lead.create" || workspace.isDemo)
+        return json({ workspace });
+      let notice = "Lead saved. Introduction queued in Email until a sender is connected.";
+      if (emailConfigured()) {
+        try {
+          await dispatchEmail(user.workspaceId, workspace.outbox[0].id);
+          notice = "Lead saved. Introduction sent.";
+        } catch {
+          notice = "Lead saved. Check the introduction in your email outbox before retrying.";
+        }
+      }
+      return json({ workspace: await getWorkspace(user.workspaceId), notice });
     }
     if (path === "email/send") {
       await dispatchEmail(user.workspaceId, z.string().uuid().parse(body.id));

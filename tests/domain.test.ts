@@ -571,3 +571,16 @@ test("GST is split into CGST and SGST in-state and IGST between states", () => {
     igst: 0,
   });
 });
+
+test("saving a new lead automatically queues one introduction, excluding edits and demos", () => {
+  const s = emptyWorkspace("Orbit", "INR");
+  const lead = { type: "lead.create", name: "Asha Mehta", email: "asha@example.com", company: "", value: 0, source: "Website" };
+  applyCommand(s, lead);
+  assert.equal(s.outbox.length, 1);
+  assert.equal(s.outbox[0].to, lead.email);
+  assert.match(s.outbox[0].body, /Hi Asha,/);
+  applyCommand(s, { ...lead, type: "lead.edit", id: s.leads[0].id });
+  s.isDemo = true;
+  applyCommand(s, { ...lead });
+  assert.equal(s.outbox.length, 1);
+});
