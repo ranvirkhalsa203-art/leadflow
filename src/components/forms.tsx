@@ -397,6 +397,7 @@ export function Editor({
         type: recordId ? "lead.edit" : "lead.create",
         ...(recordId ? { id: recordId } : {}),
         ...f,
+        sendIntroduction: f.sendIntroduction === "on",
         value: Math.round(Number(f.value) * 100),
       };
     if (kind === "product")
@@ -496,6 +497,9 @@ export function Editor({
         <div className="editor-body">
           {kind === "lead" && (
             <>
+              {!recordId && !s.isDemo && (
+                <label><input type="checkbox" name="sendIntroduction" /> Send introduction email when I save this lead</label>
+              )}
               <Field label="Contact name">
                 <input
                   name="name"

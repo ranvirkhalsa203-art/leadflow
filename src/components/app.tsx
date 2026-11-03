@@ -314,7 +314,7 @@ export default function LeadFlow({
           }
         : old,
     );
-    setToast("Saved. You’re all up to date.");
+    setToast(result.notice || "Saved. You’re all up to date.");
   }
   async function act(command: unknown) {
     const generation = authGeneration.current;
