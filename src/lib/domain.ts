@@ -42,7 +42,6 @@ export type LineItem = z.infer<typeof itemSchema>;
 export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("lead.create"),
-    sendIntroduction: z.boolean().optional(),
     name: text,
     company: z.string().trim().max(200),
     email: z.email().max(254),
@@ -465,7 +464,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
         status: "new",
         createdAt: now,
       });
-      if (c.sendIntroduction && !s.isDemo) {
+      if (!s.isDemo) {
         const business = s.business.legalName || s.name;
         const firstName = c.name.split(/\s+/)[0];
         s.outbox.unshift({

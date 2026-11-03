@@ -202,7 +202,7 @@ async function handler(req: NextRequest) {
     if (path === "command") {
       await rateLimit(`commands:${user.workspaceId}`, 300, 60000);
       const workspace = await updateWorkspace(user.workspaceId, (s) => applyCommand(s, body));
-      if (body.type !== "lead.create" || !body.sendIntroduction || workspace.isDemo)
+      if (body.type !== "lead.create" || workspace.isDemo)
         return json({ workspace });
       let notice = "Lead saved. Introduction queued in Email until a sender is connected.";
       if (emailConfigured()) {
