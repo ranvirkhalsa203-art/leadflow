@@ -584,3 +584,13 @@ test("saving a new lead automatically queues one introduction, excluding edits a
   applyCommand(s, { ...lead });
   assert.equal(s.outbox.length, 1);
 });
+
+test("lead phone numbers normalize and survive edits without dropping existing data", () => {
+  const s = emptyWorkspace("Shop", "INR");
+  const command = { type: "lead.create", name: "Yash", company: "", email: "yash@example.com", value: 1000, source: "Shop", phone: "+91 98765 43210" };
+  applyCommand(s, command);
+  assert.equal((s.leads[0] as unknown as { phone: string }).phone, "+919876543210");
+  applyCommand(s, { ...command, type: "lead.edit", id: s.leads[0].id, phone: undefined });
+  assert.equal((s.leads[0] as unknown as { phone: string }).phone, "+919876543210");
+  assert.throws(() => applyCommand(s, { ...command, phone: "9876543210" }), /country code/);
+});

@@ -2,7 +2,7 @@ import { randomBytes, scrypt, timingSafeEqual, createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { emptyWorkspace } from "./domain";
-import { createWorkspace, query, rateLimit } from "./db";
+import { createWorkspace, query, rateLimit, transaction } from "./db";
 import { sendTransactional, emailConfigured } from "./email";
 const derive = promisify(scrypt);
 export const sessionCookie = "leadflow_session";
@@ -29,9 +29,9 @@ async function verify(value: string, stored: string) {
   const expected = Buffer.from(hex, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-async function session(user: User) {
+async function session(user: User, execute: typeof query = query) {
   const token = randomBytes(32).toString("hex");
-  await query(
+  await execute(
     "INSERT INTO lf_sessions (token,user_id,expires_at) VALUES ($1,$2,$3)",
     [digest(token), user.id, new Date(Date.now() + 7 * 86400000).toISOString()],
   );
@@ -63,9 +63,13 @@ export async function register(
   const password = await passwordHash(data.password);
   const workspaceId = crypto.randomUUID();
   const user = { id: crypto.randomUUID(), email: data.email, workspaceId };
-  await createWorkspace(workspaceId, emptyWorkspace(data.name, data.currency));
-  try {
-    await query(
+  return transaction(async (tx) => {
+    await createWorkspace(
+      workspaceId,
+      emptyWorkspace(data.name, data.currency),
+      tx.query,
+    );
+    await tx.query(
       "INSERT INTO lf_users (id,email,password,workspace_id,email_verified,created_at) VALUES ($1,$2,$3,$4,$5,$6)",
       [
         user.id,
@@ -76,16 +80,19 @@ export async function register(
         new Date().toISOString(),
       ],
     );
-  } catch {
-    await query("DELETE FROM lf_workspaces WHERE id=$1", [workspaceId]);
+    return requireVerification
+      ? { user, verificationRequired: true as const }
+      : {
+          ...(await session(user, tx.query)),
+          verificationRequired: false as const,
+        };
+  }).catch(() => {
     throw new Error(
       "Unable to create account with this email. Try signing in.",
     );
-  }
-  return requireVerification
-    ? { user, verificationRequired: true as const }
-    : { ...(await session(user)), verificationRequired: false as const };
+  });
 }
+
 export async function login(
   email: string,
   password: string,
@@ -103,42 +110,53 @@ export async function login(
       8,
       15 * 60 * 1000,
     );
-  const { rows } = await query(
-    "SELECT id,email,password,workspace_id,email_verified FROM lf_users WHERE email=$1",
-    [email],
-  );
-  const row = rows[0];
-  const valid = await verify(
-    password,
-    row
-      ? String(row.password)
-      : "00000000000000000000000000000000:" + "00".repeat(64),
-  );
-  if (!row || !valid) throw new Error("Email or password is incorrect");
-  if (row.email_verified === false || row.email_verified === 0)
-    throw new Error("Please verify your email before signing in.");
-  return session({
-    id: String(row.id),
-    email: String(row.email),
-    workspaceId: String(row.workspace_id),
+  return transaction(async (tx) => {
+    const { rows } = await tx.query(
+      `SELECT id,email,password,workspace_id,email_verified FROM lf_users WHERE email=$1${process.env.DATABASE_URL ? " FOR UPDATE" : ""}`,
+      [email],
+    );
+    const row = rows[0];
+    const valid = await verify(
+      password,
+      row
+        ? String(row.password)
+        : "00000000000000000000000000000000:" + "00".repeat(64),
+    );
+    if (!row || !valid) throw new Error("Email or password is incorrect");
+    if (row.email_verified === false || row.email_verified === 0)
+      throw new Error("Please verify your email before signing in.");
+    return session(
+      {
+        id: String(row.id),
+        email: String(row.email),
+        workspaceId: String(row.workspace_id),
+      },
+      tx.query,
+    );
   });
 }
 async function issueAuthToken(userId: string, purpose: "verify" | "reset") {
   const token = randomBytes(32).toString("hex");
   const tokenHash = digest(token);
-  await query("DELETE FROM lf_auth_tokens WHERE user_id=$1 AND purpose=$2", [
-    userId,
-    purpose,
-  ]);
-  await query(
-    "INSERT INTO lf_auth_tokens (token_hash,user_id,purpose,expires_at,consumed_at) VALUES ($1,$2,$3,$4,NULL)",
-    [
-      tokenHash,
-      userId,
-      purpose,
-      new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    ],
-  );
+  await transaction(async (tx) => {
+    if (process.env.DATABASE_URL)
+      await tx.query("SELECT id FROM lf_users WHERE id=$1 FOR UPDATE", [
+        userId,
+      ]);
+    await tx.query(
+      "DELETE FROM lf_auth_tokens WHERE user_id=$1 AND purpose=$2",
+      [userId, purpose],
+    );
+    await tx.query(
+      "INSERT INTO lf_auth_tokens (token_hash,user_id,purpose,expires_at,consumed_at) VALUES ($1,$2,$3,$4,NULL)",
+      [
+        tokenHash,
+        userId,
+        purpose,
+        new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      ],
+    );
+  });
   return token;
 }
 export async function sendVerification(
@@ -173,15 +191,29 @@ export async function verifyEmail(token: string) {
     .regex(/^[a-f0-9]{64}$/)
     .parse(token);
   const now = new Date().toISOString();
-  const { rows } = await query(
-    "UPDATE lf_auth_tokens SET consumed_at=$1 WHERE token_hash=$2 AND purpose='verify' AND consumed_at IS NULL AND expires_at>$1 RETURNING user_id",
-    [now, digest(token)],
-  );
-  if (!rows[0]) throw new Error("This verification link is invalid or expired");
-  await query("UPDATE lf_users SET email_verified=$1 WHERE id=$2", [
-    1,
-    rows[0].user_id,
-  ]);
+  await transaction(async (tx) => {
+    if (process.env.DATABASE_URL) {
+      const candidate = await tx.query(
+        "SELECT user_id FROM lf_auth_tokens WHERE token_hash=$1 AND purpose=$2",
+        [digest(token), "verify"],
+      );
+      if (candidate.rows[0])
+        await tx.query("SELECT id FROM lf_users WHERE id=$1 FOR UPDATE", [
+          candidate.rows[0].user_id,
+        ]);
+    }
+
+    const { rows } = await tx.query(
+      "UPDATE lf_auth_tokens SET consumed_at=$1 WHERE token_hash=$2 AND purpose='verify' AND consumed_at IS NULL AND expires_at>$1 RETURNING user_id",
+      [now, digest(token)],
+    );
+    if (!rows[0])
+      throw new Error("This verification link is invalid or expired");
+    await tx.query("UPDATE lf_users SET email_verified=$1 WHERE id=$2", [
+      1,
+      rows[0].user_id,
+    ]);
+  });
 }
 export async function requestPasswordReset(email: string, appUrl: string) {
   const parsed = z.email().max(254).parse(email).toLowerCase();
@@ -203,17 +235,33 @@ export async function resetPassword(token: string, password: string) {
     .regex(/^[a-f0-9]{64}$/)
     .parse(token);
   const nextPassword = z.string().min(12).max(128).parse(password);
+  const hashedPassword = await passwordHash(nextPassword);
   const now = new Date().toISOString();
-  const { rows } = await query(
-    "UPDATE lf_auth_tokens SET consumed_at=$1 WHERE token_hash=$2 AND purpose='reset' AND consumed_at IS NULL AND expires_at>$1 RETURNING user_id",
-    [now, digest(token)],
-  );
-  if (!rows[0]) throw new Error("This password link is invalid or expired");
-  await query("UPDATE lf_users SET password=$1 WHERE id=$2", [
-    await passwordHash(nextPassword),
-    rows[0].user_id,
-  ]);
-  await query("DELETE FROM lf_sessions WHERE user_id=$1", [rows[0].user_id]);
+  await transaction(async (tx) => {
+    if (process.env.DATABASE_URL) {
+      const candidate = await tx.query(
+        "SELECT user_id FROM lf_auth_tokens WHERE token_hash=$1 AND purpose=$2",
+        [digest(token), "reset"],
+      );
+      if (candidate.rows[0])
+        await tx.query("SELECT id FROM lf_users WHERE id=$1 FOR UPDATE", [
+          candidate.rows[0].user_id,
+        ]);
+    }
+
+    const { rows } = await tx.query(
+      "UPDATE lf_auth_tokens SET consumed_at=$1 WHERE token_hash=$2 AND purpose='reset' AND consumed_at IS NULL AND expires_at>$1 RETURNING user_id",
+      [now, digest(token)],
+    );
+    if (!rows[0]) throw new Error("This password link is invalid or expired");
+    await tx.query("UPDATE lf_users SET password=$1 WHERE id=$2", [
+      hashedPassword,
+      rows[0].user_id,
+    ]);
+    await tx.query("DELETE FROM lf_sessions WHERE user_id=$1", [
+      rows[0].user_id,
+    ]);
+  });
 }
 export async function authenticate(
   token: string | undefined,
@@ -240,18 +288,20 @@ export async function logout(token: string) {
 
 export async function deleteAccount(userId: string, password: string) {
   const checkedPassword = z.string().min(1).max(128).parse(password);
-  const { rows } = await query(
-    "SELECT id,password,workspace_id FROM lf_users WHERE id=$1",
-    [userId],
-  );
-  const row = rows[0];
-  if (!row || !(await verify(checkedPassword, String(row.password))))
-    throw new Error("Password is incorrect. Your account was not deleted.");
-  await query("DELETE FROM lf_sessions WHERE user_id=$1", [userId]);
-  await query("DELETE FROM lf_auth_tokens WHERE user_id=$1", [userId]);
-  await query("DELETE FROM lf_users WHERE id=$1", [userId]);
-  await query(
-    "DELETE FROM lf_workspaces WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM lf_users WHERE workspace_id=$1)",
-    [row.workspace_id],
-  );
+  await transaction(async (tx) => {
+    const { rows } = await tx.query(
+      `SELECT id,password,workspace_id FROM lf_users WHERE id=$1${process.env.DATABASE_URL ? " FOR UPDATE" : ""}`,
+      [userId],
+    );
+    const row = rows[0];
+    if (!row || !(await verify(checkedPassword, String(row.password))))
+      throw new Error("Password is incorrect. Your account was not deleted.");
+    await tx.query("DELETE FROM lf_sessions WHERE user_id=$1", [userId]);
+    await tx.query("DELETE FROM lf_auth_tokens WHERE user_id=$1", [userId]);
+    await tx.query("DELETE FROM lf_users WHERE id=$1", [userId]);
+    await tx.query(
+      "DELETE FROM lf_workspaces WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM lf_users WHERE workspace_id=$1)",
+      [row.workspace_id],
+    );
+  });
 }

@@ -1,3 +1,4 @@
+import { runMigrations } from "./migrations";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -16,7 +17,7 @@ import {
 
 type Row = Record<string, unknown>;
 type QueryResult = { rows: Row[]; changes: number };
-type Connection = {
+export type Connection = {
   query: (sql: string, params?: unknown[]) => Promise<QueryResult>;
   transaction: <T>(work: (tx: Connection) => Promise<T>) => Promise<T>;
 };
@@ -179,6 +180,7 @@ async function connect(): Promise<Connection> {
     if (!userColumns.rows.some((column) => column.name === "created_at"))
       await conn.query("ALTER TABLE lf_users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP");
   }
+  await runMigrations(conn);
   await migrateLegacyWorkspaces(conn);
   return conn;
 }
@@ -186,6 +188,11 @@ async function connect(): Promise<Connection> {
 export async function query(sql: string, params: unknown[] = []) {
   globalDb.leadflowDb ??= connect();
   return (await globalDb.leadflowDb).query(sql, params);
+}
+
+export async function transaction<T>(work: (tx: Connection) => Promise<T>): Promise<T> {
+  globalDb.leadflowDb ??= connect();
+  return (await globalDb.leadflowDb).transaction(work);
 }
 
 export async function checkDatabase() {
@@ -203,8 +210,8 @@ function workspaceMetadata(workspace: Workspace) {
   };
 }
 
-export async function createWorkspace(id: string, workspace: Workspace) {
-  await query(
+export async function createWorkspace(id: string, workspace: Workspace, execute: Connection["query"] = query) {
+  await execute(
     "INSERT INTO lf_workspaces (id,data,version,entities_migrated) VALUES ($1,$2,0,1)",
     [id, JSON.stringify(workspaceMetadata(workspace))],
   );
@@ -284,7 +291,7 @@ async function readWorkspace(tx: Connection, id: string): Promise<{
   const workspace = migrateWorkspace({
     ...base,
     ...metadata,
-    leads: leadRows.rows.map((r) => ({ id: String(r.id), name: String(r.name), company: String(r.company), email: String(r.email), value: Number(r.value), source: String(r.source), state: String(r.state ?? ""), status: String(r.status) as Lead["status"], createdAt: String(r.created_at) })),
+    leads: leadRows.rows.map((r) => ({ id: String(r.id), name: String(r.name), company: String(r.company), email: String(r.email), phone: String(r.phone ?? ""), value: Number(r.value), source: String(r.source), state: String(r.state ?? ""), status: String(r.status) as Lead["status"], createdAt: String(r.created_at) })),
     products: productRows.rows.map((r) => ({ id: String(r.id), name: String(r.name), description: String(r.description), hsnSac: String(r.hsn_sac ?? ""), unitPrice: Number(r.unit_price), taxBps: Number(r.tax_bps), active: Number(r.active) === 1, trackInventory: Number(r.track_inventory) === 1, stockOnHandMilli: Number(r.stock_on_hand_milli), lowStockAtMilli: Number(r.low_stock_at_milli), createdAt: String(r.created_at) })),
     followups: followupRows.rows.map((r) => ({ id: String(r.id), leadId: String(r.lead_id), title: String(r.title), dueDate: String(r.due_date), done: Number(r.done) === 1 })),
     documents,
@@ -319,7 +326,7 @@ type EntitySpec<T extends { id: string }> = {
   values: (row: T) => unknown[];
 };
 const entities: EntitySpec<any>[] = [
-  { key: "leads", table: "lf_leads", columns: ["name","company","email","value","source","state","status","created_at"], values: (r: Lead) => [r.name,r.company,r.email,r.value,r.source,r.state,r.status,r.createdAt] },
+  { key: "leads", table: "lf_leads", columns: ["name","company","email","value","source","state","status","created_at","phone"], values: (r: Lead) => [r.name,r.company,r.email,r.value,r.source,r.state,r.status,r.createdAt,r.phone ?? ""] },
   { key: "products", table: "lf_products", columns: ["name","description","hsn_sac","unit_price","tax_bps","active","track_inventory","stock_on_hand_milli","low_stock_at_milli","created_at"], values: (r: Product) => [r.name,r.description,r.hsnSac,r.unitPrice,r.taxBps,r.active,r.trackInventory,r.stockOnHandMilli,r.lowStockAtMilli,r.createdAt] },
   { key: "followups", table: "lf_followups", columns: ["lead_id","title","due_date","done"], values: (r: Workspace["followups"][number]) => [r.leadId,r.title,r.dueDate,r.done] },
   { key: "documents", table: "lf_documents", columns: ["number","kind","lead_id","due_date","tax_bps","subtotal","tax","total","notes","status","created_at","quote_id","related_document_id","tax_supply","cgst","sgst","igst"], values: (r: Document) => [r.number,r.kind,r.leadId,r.dueDate,r.taxBps,r.subtotal,r.tax,r.total,r.notes,r.status,r.createdAt,r.quoteId,r.relatedDocumentId,r.taxSplit?.supply,r.taxSplit?.cgst,r.taxSplit?.sgst,r.taxSplit?.igst] },
@@ -398,7 +405,12 @@ async function migrateLegacyWorkspaces(conn: Connection) {
 export async function getWorkspace(id: string): Promise<Workspace> {
   globalDb.leadflowDb ??= connect();
   const db = await globalDb.leadflowDb;
-  return db.transaction(async (tx) => (await readWorkspace(tx,id)).workspace);
+  return db.transaction(async (tx) => {
+    // Hold the tenant lock while assembling the multi-table view. Writers use
+    // FOR UPDATE on this same row, so readers cannot mix two revisions.
+    if (isPostgres()) await tx.query("SELECT id FROM lf_workspaces WHERE id=$1 FOR SHARE", [id]);
+    return (await readWorkspace(tx,id)).workspace;
+  });
 }
 
 export async function updateWorkspace(id: string, mutate: (s: Workspace) => Workspace): Promise<Workspace> {
