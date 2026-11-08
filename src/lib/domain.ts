@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { normalizePhone } from "./contact";
+const phone = z.string().max(40).transform(normalizePhone).refine(v => v === "" || /^\+[1-9]\d{7,14}$/.test(v), "Include the country code, e.g. +919876543210").optional();
 
 export const leadStages = [
   "new",
@@ -45,6 +47,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: text,
     company: z.string().trim().max(200),
     email: z.email().max(254),
+    phone,
     value: money,
     source: text,
     state: z.string().trim().max(100).default(""),
@@ -56,6 +59,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: text,
     company: z.string().trim().max(200),
     email: z.email().max(254),
+    phone,
     value: money,
     source: text,
     state: z.string().trim().max(100).default(""),
@@ -164,6 +168,7 @@ export type Lead = {
   name: string;
   company: string;
   email: string;
+  phone?: string;
   value: number;
   source: string;
   state: string;
@@ -458,6 +463,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
         name: c.name,
         company: c.company,
         email: c.email,
+        ...(c.phone !== undefined ? { phone: c.phone } : {}),
         value: c.value,
         source: c.source,
         state: c.state,
@@ -487,6 +493,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
         name: c.name,
         company: c.company,
         email: c.email,
+        ...(c.phone !== undefined ? { phone: c.phone } : {}),
         value: c.value,
         source: c.source,
         state: c.state,

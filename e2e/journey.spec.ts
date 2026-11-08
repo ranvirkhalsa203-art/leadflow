@@ -127,8 +127,14 @@ test("register, lead, follow-up, invoice and payment persist after reload", asyn
   await page.getByLabel("Contact name").fill("Asha Mehta");
   await page.getByLabel("Company").fill("Orbit Studio");
   await page.getByLabel("Contact email").fill("asha@example.com");
+  await page.getByLabel("Phone (optional, include country code)").fill("+91 98765 43210");
   await page.getByLabel("Deal value").fill("5000");
   await page.getByRole("button", { name: "Save lead" }).click();
+  await page.getByRole("button", { name: "Leads", exact: true }).click();
+  await page.reload();
+  const whatsapp = page.getByRole("link", { name: "Open WhatsApp draft for Asha Mehta" });
+  await expect(whatsapp).toHaveAttribute("href", /^https:\/\/wa\.me\/919876543210\?text=/);
+  await expect(whatsapp).toHaveAttribute("target", "_blank");
   await page.getByRole("button", { name: "Follow-ups", exact: true }).click();
   await page
     .getByRole("button", { name: "Schedule follow-up", exact: true })

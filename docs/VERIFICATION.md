@@ -1,3 +1,14 @@
+# Current verification — 8 November 2026
+
+- Local SQLite: 31 unit/integration tests pass, including auth rollback, concurrent reset/login, phone normalization and migration rollback/retry/checksum protection.
+- Production build: passed, including TypeScript. All 8 production browser tests passed, including saved phone/WhatsApp URL after reload.
+- GitHub PostgreSQL CI: reliability commit `100c5e1` passed: https://github.com/ranvirkhalsa203-art/leadflow/actions/runs/42454782771
+- New phone/migration changes: PostgreSQL CI pending until pushed. No production deployment or live WhatsApp send performed.
+- Not claimed: full accessibility/performance/security audit, live email delivery, restore drill, employee permissions or assignment workflows.
+- See IMPLEMENTATION-LEDGER.md and PILOT-FOUNDATION.md for remaining work. Historical results below describe older revisions only.
+
+---
+
 # LeadFlow v2 verification — 2 November 2026
 
 ## Passed locally

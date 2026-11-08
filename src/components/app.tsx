@@ -52,6 +52,7 @@ import {
   type Document,
 } from "@/lib/domain";
 import { api, Auth, Editor, Field, type ModalKind } from "./forms";
+import { whatsappDraft } from "@/lib/contact";
 import { localDate, preferNewerWorkspace } from "@/lib/client-utils";
 
 export type Page =
@@ -498,6 +499,11 @@ export default function LeadFlow({
                 </td>
               )}
               <td className="right">
+                {whatsappDraft(l.phone, l.name, s.business.legalName || s.name) && (
+                  <a className="icon-button" href={whatsappDraft(l.phone, l.name, s.business.legalName || s.name)!} target="_blank" rel="noopener noreferrer" aria-label={`Open WhatsApp draft for ${l.name}`} title="Open WhatsApp draft: review and send yourself">
+                    <MessageSquare size={17} />
+                  </a>
+                )}
                 <button
                   className="icon-button"
                   title="Edit contact"

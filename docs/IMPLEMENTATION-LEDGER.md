@@ -23,3 +23,11 @@ Ruling: keep reliability changes separate from employee schema changes so rollba
 
 The complete requested upgrade is still in progress. This ledger records a tested stage, not launch approval.
 
+
+## Phone and migration foundation — 8 November 2026
+
+Reliability commit 100c5e1 passed GitHub CI with PostgreSQL. Added optional international phone numbers to lead create/edit, persisted relationally. Existing clients omitting phone preserve the old value on edit; explicitly empty phone clears it. The lead table offers a WhatsApp draft link only for valid numbers. Opening the draft does not mark the lead contacted or claim delivery.
+
+New numbered/checksummed migration runner serializes PostgreSQL runners with a transaction-scoped advisory lock. SQLite uses its existing serialized transaction. Schema changes and markers commit together; failed migrations roll back and changed historical scripts fail closed. The first migration is additive (phone column with empty default). Legacy table bootstrap is retained for compatibility; replacing all historical setup is separate work. Migrations currently run at connection initialization, as existing schema setup did. Do not deploy until PostgreSQL CI passes and a production backup/restore procedure is agreed.
+
+Verification: 31 SQLite tests, production build and 8 production browser journeys passed. The browser test confirms the normalized WhatsApp URL after reload without opening WhatsApp or sending a message. No migration has been applied to the live database by this task.

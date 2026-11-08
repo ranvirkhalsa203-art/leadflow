@@ -527,6 +527,10 @@ export function Editor({
                   />
                 </Field>
               </div>
+              <Field label="Phone (optional, include country code)">
+                <input name="phone" type="tel" maxLength={40} placeholder="+919876543210" defaultValue={lead?.phone ?? ""} />
+                <small>Used to open a WhatsApp draft. You review and send the message yourself.</small>
+              </Field>
               <div className="form-grid">
                 <Field label="Deal value">
                   <div className="input-prefix">
