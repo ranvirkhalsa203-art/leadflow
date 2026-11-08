@@ -188,6 +188,11 @@ export async function query(sql: string, params: unknown[] = []) {
   return (await globalDb.leadflowDb).query(sql, params);
 }
 
+export async function transaction<T>(work: (tx: Connection) => Promise<T>): Promise<T> {
+  globalDb.leadflowDb ??= connect();
+  return (await globalDb.leadflowDb).transaction(work);
+}
+
 export async function checkDatabase() {
   await query("SELECT 1");
 }
@@ -203,8 +208,8 @@ function workspaceMetadata(workspace: Workspace) {
   };
 }
 
-export async function createWorkspace(id: string, workspace: Workspace) {
-  await query(
+export async function createWorkspace(id: string, workspace: Workspace, execute: Connection["query"] = query) {
+  await execute(
     "INSERT INTO lf_workspaces (id,data,version,entities_migrated) VALUES ($1,$2,0,1)",
     [id, JSON.stringify(workspaceMetadata(workspace))],
   );
@@ -398,7 +403,12 @@ async function migrateLegacyWorkspaces(conn: Connection) {
 export async function getWorkspace(id: string): Promise<Workspace> {
   globalDb.leadflowDb ??= connect();
   const db = await globalDb.leadflowDb;
-  return db.transaction(async (tx) => (await readWorkspace(tx,id)).workspace);
+  return db.transaction(async (tx) => {
+    // Hold the tenant lock while assembling the multi-table view. Writers use
+    // FOR UPDATE on this same row, so readers cannot mix two revisions.
+    if (isPostgres()) await tx.query("SELECT id FROM lf_workspaces WHERE id=$1 FOR SHARE", [id]);
+    return (await readWorkspace(tx,id)).workspace;
+  });
 }
 
 export async function updateWorkspace(id: string, mutate: (s: Workspace) => Workspace): Promise<Workspace> {
