@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { ZodError, z } from "zod";
 import {
@@ -41,7 +41,6 @@ function trustedClientIp(req: NextRequest) {
 async function handler(req: NextRequest) {
   const path = req.nextUrl.pathname.replace("/api/", "");
   try {
-    await cleanupExpiredAuthRecords();
     if (path === "health" && req.method === "GET") {
       await checkDatabase();
       return json({ status: "ok" });
@@ -62,6 +61,10 @@ async function handler(req: NextRequest) {
     if (req.method === "GET") {
       const user = await authenticate(token);
       if (!user) return json({ error: "Please sign in" }, 401);
+      after(async () => {
+        try { await cleanupExpiredAuthRecords(); }
+        catch { console.error("LeadFlow auth maintenance failed"); }
+      });
       if (path === "state")
         return json({
           user,
@@ -176,6 +179,10 @@ async function handler(req: NextRequest) {
     }
     const user = await authenticate(token);
     if (!user) return json({ error: "Please sign in" }, 401);
+      after(async () => {
+        try { await cleanupExpiredAuthRecords(); }
+        catch { console.error("LeadFlow auth maintenance failed"); }
+      });
     if (path === "account/delete") {
       await deleteAccount(user.id, body.password);
       const response = json({ ok: true });
@@ -204,16 +211,17 @@ async function handler(req: NextRequest) {
       const workspace = await updateWorkspace(user.workspaceId, (s) => applyCommand(s, body));
       if (body.type !== "lead.create" || workspace.isDemo)
         return json({ workspace });
-      let notice = "Lead saved. Introduction queued in Email until a sender is connected.";
+      const notice = emailConfigured()
+        ? "Lead saved. Introduction queued. Check Email for sending status."
+        : "Lead saved. Introduction queued in Email until a sender is connected.";
       if (emailConfigured()) {
-        try {
-          await dispatchEmail(user.workspaceId, workspace.outbox[0].id);
-          notice = "Lead saved. Introduction sent.";
-        } catch {
-          notice = "Lead saved. Check the introduction in your email outbox before retrying.";
-        }
+        const messageId = workspace.outbox[0].id;
+        after(async () => {
+          try { await dispatchEmail(user.workspaceId, messageId); }
+          catch { console.error("LeadFlow queued introduction delivery failed"); }
+        });
       }
-      return json({ workspace: await getWorkspace(user.workspaceId), notice });
+      return json({ workspace, notice });
     }
     if (path === "email/send") {
       await dispatchEmail(user.workspaceId, z.string().uuid().parse(body.id));
