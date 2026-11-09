@@ -9,17 +9,26 @@ import {
 } from "@/lib/domain";
 import { localDate } from "@/lib/client-utils";
 export async function api(path: string, data?: unknown) {
-  const r = await fetch(`/api/${path}`, {
-    method: data === undefined ? "GET" : "POST",
-    headers:
-      data === undefined
-        ? {}
-        : { "Content-Type": "application/json", "x-leadflow": "1" },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-  const result = await r.json();
-  if (!r.ok) throw new Error(result.error || "Request failed");
-  return result;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), data === undefined ? 12000 : 25000);
+  try {
+    const r = await fetch(`/api/${path}`, {
+      method: data === undefined ? "GET" : "POST",
+      headers: data === undefined ? {} : { "Content-Type": "application/json", "x-leadflow": "1" },
+      body: data === undefined ? undefined : JSON.stringify(data),
+      signal: controller.signal,
+    });
+    const result = await r.json();
+    if (!r.ok) throw new Error(result.error || "Request failed");
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(data === undefined
+      ? "Loading is taking too long. Please retry."
+      : "Confirmation is taking too long. Refresh and check whether your change was saved before trying again.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 export function Field({
   label,

@@ -255,16 +255,19 @@ export default function LeadFlow({
         : state,
     );
   }
+  async function loadSession() {
+    setLoading(true);
+    setError("");
+    try { await refresh(); }
+    catch (e) {
+      if ((e as Error).message !== "Please sign in") setError((e as Error).message);
+    } finally { setLoading(false); }
+  }
   useEffect(() => {
     api("config")
       .then((x) => setDemoEnabled(x.demoEnabled))
       .catch(() => {});
-    refresh()
-      .catch((e) => {
-        if ((e as Error).message !== "Please sign in")
-          setError((e as Error).message);
-      })
-      .finally(() => setLoading(false));
+    void loadSession();
     const theme = localStorage.getItem("leadflow-theme") === "dark";
     setDark(theme);
   }, []);
@@ -351,7 +354,7 @@ export default function LeadFlow({
     return (
       <div className="loading">
         <Layers3 size={32} />
-        <span>Making room for your next big thing…</span>
+        <span>Loading your business…</span>
         <Loader2 className="spin" size={20} />
       </div>
     );
@@ -361,6 +364,7 @@ export default function LeadFlow({
         {error && (
           <div className="global-error" role="alert">
             {error}
+            <button className="secondary" onClick={() => void loadSession()}>Retry loading</button>
           </div>
         )}
         <Auth
