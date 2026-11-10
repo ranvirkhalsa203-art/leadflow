@@ -51,7 +51,13 @@ import {
   type Lead,
   type Document,
 } from "@/lib/domain";
-import { api, Auth, Editor, Field, type ModalKind } from "./forms";
+import { api, Auth } from "./forms";
+import { Field } from "./field";
+import type { ModalKind } from "./editor";
+import dynamic from "next/dynamic";
+const Editor = dynamic(() => import("./editor").then(module => module.Editor), {
+  loading: () => <div className="toast" role="status">Opening form…</div>,
+});
 import { whatsappDraft } from "@/lib/contact";
 import { localDate, preferNewerWorkspace } from "@/lib/client-utils";
 
@@ -268,12 +274,11 @@ export default function LeadFlow({
       .then((x) => setDemoEnabled(x.demoEnabled))
       .catch(() => {});
     void loadSession();
-    const theme = localStorage.getItem("leadflow-theme") === "dark";
-    setDark(theme);
+    try { setDark(localStorage.getItem("leadflow-theme") === "dark"); } catch { /* Theme storage is optional. */ }
   }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.setItem("leadflow-theme", dark ? "dark" : "light");
+    try { localStorage.setItem("leadflow-theme", dark ? "dark" : "light"); } catch { /* Keep the current in-memory theme. */ }
   }, [dark]);
   useEffect(() => {
     if (!toast) return;
@@ -350,32 +355,22 @@ export default function LeadFlow({
       setError((e as Error).message);
     }
   }
-  if (loading)
+  if (loading || (!session && error))
     return (
-      <div className="loading">
-        <Layers3 size={32} />
-        <span>Loading your business…</span>
-        <Loader2 className="spin" size={20} />
-      </div>
+      <main className="startup-page">
+        <section className="startup-card" aria-labelledby="startup-title" aria-busy={loading}>
+          <div className="startup-brand"><Layers3 size={26} aria-hidden="true" /> LeadFlow</div>
+          <span className="eyebrow">YOUR BUSINESS, CONNECTED</span>
+          <h1 id="startup-title">{loading ? "Getting your business ready" : "Let’s get you connected"}</h1>
+          {loading ? <p role="status"><Loader2 className="spin" size={18} aria-hidden="true" /> Loading your customers and daily work…</p>
+            : <><p role="alert">{error}</p><button className="primary" onClick={() => void loadSession()}>Retry loading</button></>}
+          <div className="startup-summary" aria-hidden="true"><span>Customers</span><span>Follow-ups</span><span>Payments</span></div>
+          <a href="/">Back to homepage</a>
+        </section>
+      </main>
     );
   if (!session)
-    return (
-      <>
-        {error && (
-          <div className="global-error" role="alert">
-            {error}
-            <button className="secondary" onClick={() => void loadSession()}>Retry loading</button>
-          </div>
-        )}
-        <Auth
-          onSuccess={async () => {
-            authGeneration.current++;
-            await refresh();
-          }}
-          demoEnabled={demoEnabled}
-        />
-      </>
-    );
+    return <Auth onSuccess={async () => { authGeneration.current++; await refresh(); }} demoEnabled={demoEnabled} />;
   const s = session.workspace;
   const money = (n: number) => formatMoney(n, s.currency);
   const open = (kind: ModalKind, id?: string) => setModal({ kind, id });
