@@ -61,7 +61,7 @@ test("delayed mutations never show one account’s data after switching accounts
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
-  await page.getByLabel("Workspace name").fill("Isolated new business");
+  await page.getByLabel("Business name").fill("Isolated new business");
   await page
     .getByLabel("Email address")
     .fill(`isolated-${Date.now()}@example.com`);
@@ -69,7 +69,7 @@ test("delayed mutations never show one account’s data after switching accounts
     .getByLabel("Password", { exact: true })
     .fill("another-good-password-2026");
   await page
-    .getByRole("button", { name: "Create workspace", exact: true })
+    .getByRole("button", { name: "Create business", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
@@ -107,7 +107,7 @@ test("register, lead, follow-up, invoice and payment persist after reload", asyn
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
-  await page.getByLabel("Workspace name").fill("Journey Studio");
+  await page.getByLabel("Business name").fill("Journey Studio");
   await page
     .getByLabel("Email address")
     .fill(`journey-${Date.now()}@example.com`);
@@ -115,7 +115,7 @@ test("register, lead, follow-up, invoice and payment persist after reload", asyn
     .getByLabel("Password", { exact: true })
     .fill("A-good-password-2026!");
   await page
-    .getByRole("button", { name: "Create workspace", exact: true })
+    .getByRole("button", { name: "Create business", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
