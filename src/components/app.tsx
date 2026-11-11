@@ -391,7 +391,7 @@ export default function LeadFlow({
     (l) =>
       (page !== "Clients" || l.status === "won") &&
       (filter === "all" || l.status === filter) &&
-      matched(l.name, l.company, l.email, l.source),
+      matched(l.name, l.company, l.email, l.phone ?? "", l.source),
   );
   const docs = s.documents.filter(
     (d) =>
@@ -468,7 +468,7 @@ export default function LeadFlow({
                   <Avatar name={l.name} index={i} />
                   <span>
                     <strong>{l.name}</strong>
-                    <small>{l.company || l.email}</small>
+                    <small>{l.company || l.email || l.phone}</small>
                   </span>
                 </div>
               </td>
@@ -1002,7 +1002,7 @@ export default function LeadFlow({
                       aria-label="Search contacts"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search name, company or email…"
+                      placeholder="Search name, phone, company or email…"
                     />
                   </div>
                   {page === "Leads" && (

@@ -127,7 +127,7 @@ test("register, lead, follow-up, invoice and payment persist after reload", asyn
   await page.getByLabel("Contact name").fill("Asha Mehta");
   await page.getByLabel("Company").fill("Orbit Studio");
   await page.getByLabel("Contact email").fill("asha@example.com");
-  await page.getByLabel("Phone (optional, include country code)").fill("+91 98765 43210");
+  await page.getByLabel("Phone (include country code)").fill("+91 98765 43210");
   await page.getByLabel("Deal value").fill("5000");
   await page.getByRole("button", { name: "Save lead" }).click();
   await page.getByRole("button", { name: "Leads", exact: true }).click();

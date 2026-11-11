@@ -46,7 +46,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     type: z.literal("lead.create"),
     name: text,
     company: z.string().trim().max(200),
-    email: z.email().max(254),
+    email: z.union([z.literal(""), z.email().max(254)]),
     phone,
     value: money,
     source: text,
@@ -58,7 +58,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     id,
     name: text,
     company: z.string().trim().max(200),
-    email: z.email().max(254),
+    email: z.union([z.literal(""), z.email().max(254)]),
     phone,
     value: money,
     source: text,
@@ -458,6 +458,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
   let title = "";
   switch (c.type) {
     case "lead.create":
+      if (!c.email && !c.phone) throw new Error("Enter a phone or email for this customer");
       s.leads.unshift({
         id: uid(),
         name: c.name,
@@ -470,7 +471,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
         status: "new",
         createdAt: now,
       });
-      if (!s.isDemo) {
+      if (!s.isDemo && c.email) {
         const business = s.business.legalName || s.name;
         const firstName = c.name.split(/\s+/)[0];
         s.outbox.unshift({
@@ -489,6 +490,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
     }
     case "lead.edit": {
       const l = find(s.leads, c.id);
+      if (!c.email && !(c.phone ?? l.phone)) throw new Error("Enter a phone or email for this customer");
       Object.assign(l, {
         name: c.name,
         company: c.company,
@@ -844,6 +846,7 @@ export function applyCommand(s: Workspace, raw: unknown): Workspace {
       break;
     case "email.queue": {
       const l = find(s.leads, c.leadId);
+      if (!l.email) throw new Error("Add an email address to this customer before composing an email");
       s.outbox.unshift({
         id: uid(),
         to: l.email,
