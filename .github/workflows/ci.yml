@@ -7,6 +7,10 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    container:
+      # Keep this version aligned with @playwright/test in package.json.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     services:
       postgres:
         image: postgres:16
@@ -14,8 +18,6 @@ jobs:
           POSTGRES_USER: leadflow
           POSTGRES_PASSWORD: leadflow_test
           POSTGRES_DB: leadflow_test
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U leadflow -d leadflow_test"
           --health-interval 10s
@@ -31,12 +33,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
         env:
-          DATABASE_URL: postgres://leadflow:leadflow_test@localhost:5432/leadflow_test
+          DATABASE_URL: postgres://leadflow:leadflow_test@postgres:5432/leadflow_test
       - run: npm run build
         env:
-          DATABASE_URL: postgres://leadflow:leadflow_test@localhost:5432/leadflow_test
+          DATABASE_URL: postgres://leadflow:leadflow_test@postgres:5432/leadflow_test
           APP_URL: https://leadflow.example.com
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:
           CI: true

@@ -594,3 +594,21 @@ test("lead phone numbers normalize and survive edits without dropping existing d
   assert.equal((s.leads[0] as unknown as { phone: string }).phone, "+919876543210");
   assert.throws(() => applyCommand(s, { ...command, phone: "9876543210" }), /country code/);
 });
+
+test("phone-only customers retain contact details and never queue empty-recipient emails", () => {
+  const s = emptyWorkspace("Shop", "INR");
+  const input = { type: "lead.create", name: "Phone customer", company: "", email: "", phone: "+919876543210", value: 0, source: "Walk-in" };
+  applyCommand(s, input);
+  assert.equal(s.leads[0].phone, input.phone);
+  assert.equal(s.outbox.length, 0);
+  const id = s.leads[0].id;
+  applyCommand(s, { ...input, type: "lead.edit", id, phone: undefined });
+  assert.equal(s.leads[0].phone, input.phone);
+  const before = structuredClone(s);
+  assert.throws(() => applyCommand(s, { ...input, type: "lead.edit", id, phone: "" }), /phone or email/i);
+  assert.deepEqual(s, before);
+  assert.throws(() => applyCommand(s, { ...input, phone: "" }), /phone or email/i);
+  assert.throws(() => applyCommand(s, { type: "email.queue", leadId: id, subject: "Hello", body: "Hello there" }), /email address/i);
+  assert.equal(s.outbox.length, 0);
+  assert.throws(() => applyCommand(s, { ...input, email: "invalid" }));
+});

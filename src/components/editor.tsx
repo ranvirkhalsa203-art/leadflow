@@ -172,7 +172,7 @@ export function Editor({
           {kind === "lead" && (
             <>
               {!recordId && !s.isDemo && (
-                <p>Saving this lead automatically queues a welcome email to their contact address.</p>
+                <p>Enter a phone number or email. When an email is provided, saving automatically queues a welcome email.</p>
               )}
               <Field label="Contact name">
                 <input
@@ -192,17 +192,16 @@ export function Editor({
                     defaultValue={lead?.company}
                   />
                 </Field>
-                <Field label="Contact email">
+                <Field label="Contact email (optional)">
                   <input
                     name="email"
                     type="email"
-                    required
                     placeholder="asha@orbit.com"
                     defaultValue={lead?.email}
                   />
                 </Field>
               </div>
-              <Field label="Phone (optional, include country code)">
+              <Field label="Phone (include country code)">
                 <input name="phone" type="tel" maxLength={40} placeholder="+919876543210" defaultValue={lead?.phone ?? ""} />
                 <small>Used to open a WhatsApp draft. You review and send the message yourself.</small>
               </Field>
@@ -223,6 +222,7 @@ export function Editor({
                 </Field>
                 <Field label="Source">
                   <select name="source">
+                    <option>Walk-in</option>
                     <option>Website</option>
                     <option>Referral</option>
                     <option>LinkedIn</option>
